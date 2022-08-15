@@ -1,37 +1,38 @@
 import { buildSchema } from "graphql";
 import accessController from "../Controllers/access.controller";
 import userController from "../Controllers/user.controller";
-import { handleSendEmailRequest, parseAccessToken, setRefreshTokenCookies, handlePasswordChange } from "./helper";
+import Mailer from "../utils/mailer";
+import {
+  handleSendEmailRequest,
+  parseAccessToken,
+  setRefreshTokenCookies,
+  handlePasswordChange,
+} from "./helper";
 // import { JWT, JWTActionType } from "../utils/jwt";
 
 export const schema = buildSchema(`
 type Query {
     hello: String
     profile: Profile
-    resendConfirmation(email: String!): TmpEmailResponse
-    forgotPassword(email: String!): TmpEmailResponse
+
 }
 type Mutation {
-    register(email: String!, password: String!, confirmation: String!): RegisteredUser
+    register(email: String!, password: String!, confirmation: String!): Boolean
     login(email:String!, password: String!): AccessToken
     confirm(email: String!): Boolean
     refresh: AccessToken
+    resendConfirmation(email: String!): Boolean
+    forgotPassword(email: String!): Boolean
     resetPassword(password: String!, confirmation: String!): Boolean
+    logout: Boolean
 }
 type Profile {
     ukey: ID
     email: String
 }
-type RegisteredUser{
-    ukey: ID
-    tmp_confirm_token: ID
-}
 type AccessToken{
     ukey: ID
     access_token: ID
-}
-type TmpEmailResponse{
-  tmp_email_token: ID
 }
 `);
 
@@ -64,22 +65,38 @@ export const root = {
       context.res.status(500);
       throw new Error("Confirmation failed");
     }
-    return {
-      ukey: user.ukey,
-      tmp_confirm_token: confirmToken,
-      confirmToken,
-    };
+    // replace this with queue + mail server implementation
+    const isSent = await Mailer.sendConfirmation(user.email, confirmToken);
+    if (!isSent) {
+      context.res.status(500);
+      throw new Error("Couldn't send to mail");
+      // return false
+    }
+    // return {
+    //   ukey: user.ukey,
+    //   tmp_confirm_token: confirmToken,
+    //   confirmToken,
+    // };
+    return true;
   },
 
   resendConfirmation: async ({ email }: { email: string }, context: any) => {
     // return {
     //   tmp_mail_token: "kdjd",
     // };
-    return await handleSendEmailRequest(email, context.res, true, process.env.ACCESS_TYPE_CONFIRM )
+    return await handleSendEmailRequest(
+      email,
+      context.res,
+      true,
+      process.env.ACCESS_TYPE_CONFIRM
+    );
   },
 
   confirm: async ({ email }: { email: string }, context: any) => {
-    let result = parseAccessToken(context.req, accessController.idFromName(process.env.ACCESS_TYPE_CONFIRM));
+    let result = parseAccessToken(
+      context.req,
+      accessController.idFromName(process.env.ACCESS_TYPE_CONFIRM)
+    );
     if (result.isError()) {
       context.res.status(result.status);
       throw result.getError();
@@ -143,7 +160,10 @@ export const root = {
     return { ukey: user.ukey, access_token: accessToken };
   },
   profile: async ({}: {}, context: any) => {
-    const result = parseAccessToken(context.req, accessController.idFromName(process.env.ACCESS_TYPE_USER));
+    const result = parseAccessToken(
+      context.req,
+      accessController.idFromName(process.env.ACCESS_TYPE_USER)
+    );
     if (result.isError()) {
       context.res.status(result.status);
       throw result.getError();
@@ -222,11 +242,56 @@ export const root = {
     // return {
     //   tmp_mail_token: "kdjd",
     // };
-    return await handleSendEmailRequest(email, context.res, false, process.env.ACCESS_TYPE_FORGOT_PASSWORD )
+    return await handleSendEmailRequest(
+      email,
+      context.res,
+      false,
+      process.env.ACCESS_TYPE_FORGOT_PASSWORD
+    );
   },
-  resetPassword: async ({ password, confirmation }: { password: string, confirmation: string  }, context: any) => {
-    const accessId = accessController.idFromName(process.env.ACCESS_TYPE_FORGOT_PASSWORD)
-    return await handlePasswordChange(undefined, password, confirmation, context.req, context.res, accessId)
+  resetPassword: async (
+    { password, confirmation }: { password: string; confirmation: string },
+    context: any
+  ) => {
+    const accessId = accessController.idFromName(
+      process.env.ACCESS_TYPE_FORGOT_PASSWORD
+    );
+    return await handlePasswordChange(
+      undefined,
+      password,
+      confirmation,
+      context.req,
+      context.res,
+      accessId
+    );
   },
 
+  logout: async ({}: {}, context: any) => {
+    const result = parseAccessToken(
+      context.req,
+      accessController.idFromName(process.env.ACCESS_TYPE_USER)
+    );
+    context.res.status(401);
+    if (result.isError()) {
+      throw new Error("Not authorized");
+    }
+
+    const token = context.req.cookies[process.env.REFRESH_TOKEN_NAME];
+    // const {token} = context.req.cookies;
+    console.log("token", token);
+    if (!token) {
+      throw new Error("Not authorized");
+    }
+    const claims = accessController.decode(
+      token,
+      accessController.idFromName(process.env.ACCESS_TYPE_REFRESH)
+    );
+    console.log("claims", claims);
+    if (!claims) {
+      throw new Error("Not authorized");
+    }
+    context.res.status(200);
+    context.res.clearCookie(process.env.REFRESH_TOKEN_NAME);
+    return true;
+  },
 };

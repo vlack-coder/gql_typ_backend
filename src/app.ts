@@ -1,16 +1,15 @@
+import dotenv from "dotenv";
 import express from "express";
 import { graphqlHTTP } from "express-graphql"; /* A middleware to handle GraphQl request */
-// import * as dotenv from 'dotenv'
-import "reflect-metadata";
-import dotenv from "dotenv";
-import { schema, root } from "./api/schema";
-import { AppDataSource } from "./data-source";
-import { User } from "./entity/User";
-import cookieParser from "cookie-parser";
-import accessController from "./Controllers/access.controller";
-import cors, { CorsOptions } from "cors";
-
 dotenv.config();
+// import * as dotenv from 'dotenv'
+import cookieParser from "cookie-parser";
+import cors, { CorsOptions } from "cors";
+import "reflect-metadata";
+import { root, schema } from "./api/schema";
+import accessController from "./Controllers/access.controller";
+import { AppDataSource } from "./data-source";
+
 console.log(process.env);
 
 AppDataSource.initialize()
@@ -30,14 +29,14 @@ AppDataSource.initialize()
     // console.log("Here you can setup and run express / fastify / any other framework.")
     await accessController.load();
     const app = express();
-    const corOptions: CorsOptions = {
+    const corOptions: CorsOptions = { 
       origin: process.env.CORS_ORIGIN,
       credentials: true,
       optionsSuccessStatus: 200, // for legacy browsers bcus some browsers choke on 204
     };
 
-    app.use(cors());
-    // app.use(cors(corOptions));
+    // app.use(cors());
+    app.use(cors(corOptions));
     app.use(express.json());
     app.use(cookieParser());
 

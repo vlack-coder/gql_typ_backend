@@ -6,13 +6,13 @@ import Mailer from "../utils/mailer";
 
 export function parseAccessToken(req: Request, accessId: number): Result<any> {
   const authHeader = req.headers["authorization"];
-// console.log('authHeader', authHeader)
+  // console.log('authHeader', authHeader)
   if (authHeader == undefined)
     return new Result(new Error("Not authorized"), 401);
 
   // format bearer token
   const a = authHeader.split(" ");
-//   console.log('a', a)
+  //   console.log('a', a)
   if (a.length != 2) return new Result(new Error("Not authorized"), 401);
 
   const token = a[1];
@@ -42,11 +42,11 @@ export async function handleSendEmailRequest(
   const user = await userController.getByEmail(email);
   if (!user) {
     res.status(404);
-    throw Error("fack ya bitch");
+    throw Error("user not found!");
   }
   if (isConfirmation && user.confirmed) {
     res.status(401);
-    throw Error("not authoritaraiam");
+    throw Error("Account confirmed already🙄");
   }
 
   const accessToken = accessController.encode(
@@ -58,10 +58,18 @@ export async function handleSendEmailRequest(
     res.status(404);
     throw Error("fack ya bitch");
   }
-  isConfirmation
-    ? Mailer.sendConfirmation(email, accessToken)
-    : Mailer.forgotPassword(email, accessToken);
-  return { tmp_email_token: accessToken };
+  //   isConfirmation
+  //     ? Mailer.sendConfirmation(email, accessToken)
+  //     : Mailer.forgotPassword(email, accessToken);
+  const success = await (isConfirmation
+    ? Mailer.sendConfirmation(user.email, accessToken)
+    : Mailer.sendForgotPassword(user.email, accessToken));
+  if (!success) {
+    res.status(500);
+    throw Error("Server error");
+  }
+  res.status(200);
+  return true;
 }
 
 export async function handlePasswordChange(
@@ -76,34 +84,34 @@ export async function handlePasswordChange(
   if (newPassword != confirmation) {
     res.status(500);
     console.log("yes");
-    
+
     throw new Error("Passwords don't match");
-  }
-  console.log('mo');
-  
+  } 
+  console.log("mo");
+
   let result = parseAccessToken(req, accessId);
-//   console.log('result', result)
+  //   console.log('result', result)
   if (result.isError()) {
     res.status(result.status);
-    throw new Error("Server error");
+    throw new Error("Link has expired, send confirmation link again");
   }
-//   console.log('result', result)
+  //   console.log('result', result)
 
   const claims = result.getObject();
   if (claims.act != accessId) {
     res.status(result.status);
     throw new Error("Not authorized");
   }
-  console.log('claims', claims)
+  console.log("claims", claims);
   const user = await userController.getByUserKey(claims.ukey, claims.rti);
-console.log('user', user)
+  console.log("user", user);
   if (!user) {
     res.status(result.status);
     throw new Error("Not authorized");
   }
 
   result = await userController.updatePassword(user, oldPassword, newPassword);
-  console.log('result', result)
+  console.log("result", result);
   res.status(result.status);
   if (result.isError()) {
     res.status(result.status);

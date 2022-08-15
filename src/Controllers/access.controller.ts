@@ -89,7 +89,7 @@ export default class {
       )
     }
     const position = accessNames.indexOf(name);
-    return accessIds[position]
+    return accessIds[position] 
 
   }
 
